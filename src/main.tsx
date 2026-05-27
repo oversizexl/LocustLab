@@ -200,8 +200,9 @@ function App() {
 
   const testApi = async (id: number) => {
     const data = await api(`/endpoints/${id}/test`, { method: 'POST' });
-    setResponsePreview(apis.find((a) => a.id === id) ?? null);
-    load();
+    const current = apis.find((a) => a.id === id);
+    setResponsePreview(current ? { ...current, last_response: JSON.stringify(data, null, 2) } : null);
+    await load();
   };
 
   const saveServer = async (body: any) => {
@@ -271,6 +272,11 @@ function App() {
 
   const deleteTask = async (id: number) => {
     await api(`/tasks/${id}`, { method: 'DELETE' });
+    if (selectedTask?.id === id) {
+      setSelectedTask(null);
+      setTaskLogs('');
+      setTaskStats(null);
+    }
     load();
   };
 
