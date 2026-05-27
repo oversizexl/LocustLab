@@ -116,12 +116,26 @@ textarea { min-height: 150px; resize: vertical; font-family: 'Fira Code', monosp
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 14px; padding: 10px 0; }
 .pagination button { padding: 7px 10px; font-size: .86rem; }
 .page-info { color: var(--muted); font-size: .86rem; min-width: 64px; text-align: center; }
+.task-list { display: grid; gap: 10px; }
+.task-item { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(230px,auto); align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: rgba(255,255,255,.035); }
+.task-main { min-width: 0; display: grid; gap: 4px; }
+.task-main b { overflow-wrap: anywhere; }
+.task-main span, .task-main small, .task-meta { color: var(--muted); }
+.task-target { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.task-actions { min-width: 0; }
+.endpoint-info { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: rgba(255,255,255,.035); }
+.endpoint-info > span { color: var(--muted); }
+.endpoint-info p { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; }
+.endpoint-info code { max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cyan); }
 
 @media (max-width: 980px) {
   .admin-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }
   .sidebar nav { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .stats-grid, .content-grid { grid-template-columns: 1fr; }
+  .task-item { grid-template-columns: 1fr; align-items: start; }
+  .task-meta, .task-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 640px) {

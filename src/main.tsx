@@ -72,6 +72,17 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const PAGE_SIZE = 10;
 
+function scriptFileName(date = new Date()) {
+  const parts = [
+    date.getFullYear(),
+    date.getMonth() + 1,
+    date.getDate(),
+    date.getHours(),
+    date.getMinutes(),
+  ].map((item) => String(item).padStart(2, '0'));
+  return `stress_test_${parts.join('_')}.py`;
+}
+
 function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
   const [apis, setApis] = useState<ApiEndpoint[]>([]);
@@ -109,6 +120,18 @@ function App() {
   const pagedApis = filteredApis.slice((apiPage - 1) * PAGE_SIZE, apiPage * PAGE_SIZE);
 
   const runningCount = tasks.filter((t) => t.status === 'running').length;
+
+  const endpointSummary = useCallback((task: LoadTask) => {
+    const script = scriptFiles.find((item) => item.id === task.script_file_id);
+    const matched = apis.filter((apiItem) => script?.content.includes(`"${apiItem.path}"`) || script?.content.includes(`url=${apiItem.path}`));
+    return matched.length ? matched : apis.filter((apiItem) => apiItem.host === task.target_host);
+  }, [apis, scriptFiles]);
+
+  const resolveLocustHost = useCallback((task: LoadTask) => {
+    const serverHost = servers.find((s) => s.id === task.server_id)?.host;
+    if (serverHost && serverHost !== '0.0.0.0') return serverHost;
+    return window.location.hostname || '0.0.0.0';
+  }, [servers]);
 
   const load = useCallback(async () => {
     try {
@@ -209,7 +232,7 @@ function App() {
     if (!scriptContent.trim()) return null;
     const saved = await api('/scripts', {
       method: 'POST',
-      body: JSON.stringify({ name: 'stress_test.py', content: scriptContent }),
+      body: JSON.stringify({ name: scriptFileName(), content: scriptContent }),
     });
     await load();
     return saved;
@@ -291,8 +314,8 @@ function App() {
           <NavItem icon={<LayoutDashboard />} label="总览" active={page === 'dashboard'} onClick={() => setPage('dashboard')} />
           <NavItem icon={<Network />} label="接口管理" active={page === 'apis'} onClick={() => setPage('apis')} />
           <NavItem icon={<Server />} label="服务管理" active={page === 'servers'} onClick={() => setPage('servers')} />
-          <NavItem icon={<Activity />} label="压测任务" active={page === 'tasks'} onClick={() => setPage('tasks')} />
           <NavItem icon={<Code2 />} label="脚本生成" active={page === 'scripts'} onClick={() => setPage('scripts')} />
+          <NavItem icon={<Activity />} label="压测任务" active={page === 'tasks'} onClick={() => setPage('tasks')} />
         </nav>
       </aside>
 
@@ -342,9 +365,9 @@ function App() {
         {page === 'tasks' && (
           <section className="page-stack">
           <Card title="压测任务" action={<button onClick={() => setEditingTask({ id: 0, name: '', script_file_id: scriptFiles[0]?.id ?? null, server_id: servers[0]?.id ?? null, target_host: apis[0]?.host ?? 'https://api.example.com', users: 1, spawn_rate: 1, run_time: '10s', run_mode: 'web_ui', web_port: null, status: 'draft', remote_pid: null, error_message: '', report_path: '', created_at: null, started_at: null, finished_at: null })}><Plus size={16} /> 新建任务</button>}>
-            <DataTable headers={['任务名', '服务器', '目标 Host', '并发', '状态', '操作']}>
-              {tasks.map((t) => <tr key={t.id}><td>{t.name}</td><td>{servers.find((s) => s.id === t.server_id)?.name ?? '本机执行'}</td><td>{t.target_host}</td><td>{t.users} / {t.spawn_rate}</td><td><Badge tone={t.status === 'running' ? 'green' : t.status === 'failed' ? 'red' : t.status === 'success' ? 'cyan' : 'muted'}>{t.status}</Badge></td><td className="row-actions"><button onClick={() => precheckTask(t.id)}><RefreshCcw size={14} /> 预检</button><button onClick={() => startTask(t.id)} disabled={t.status === 'running'}><Play size={14} /> 启动</button><button onClick={() => stopTask(t.id)} disabled={t.status !== 'running'}><Square size={14} /> 停止</button><button onClick={() => viewTask(t)}><TerminalSquare size={14} /> 详情</button><button onClick={() => setEditingTask(t)}><Save size={14} /> 编辑</button><button className="danger" onClick={() => deleteTask(t.id)}><Trash2 size={14} /> 删除</button></td></tr>)}
-            </DataTable>
+            <div className="task-list">
+              {tasks.map((t) => { const endpoints = endpointSummary(t); const targetLabel = endpoints.map((item) => item.path).join(', ') || '--'; return <article className="task-item" key={t.id}><div className="task-main"><b>{t.name}</b><span>{servers.find((s) => s.id === t.server_id)?.name ?? '本机执行'}</span><small className="task-target" title={targetLabel}>目标接口：{targetLabel}</small></div><div className="task-meta"><span>并发 {t.users} / {t.spawn_rate}</span><Badge tone={t.status === 'running' ? 'green' : t.status === 'failed' ? 'red' : t.status === 'success' ? 'cyan' : 'muted'}>{t.status}</Badge></div><div className="row-actions task-actions"><button onClick={() => precheckTask(t.id)}><RefreshCcw size={14} /> 预检</button><button onClick={() => startTask(t.id)} disabled={t.status === 'running'}><Play size={14} /> 启动</button><button onClick={() => stopTask(t.id)} disabled={t.status !== 'running'}><Square size={14} /> 停止</button><button onClick={() => viewTask(t)}><TerminalSquare size={14} /> 详情</button><button onClick={() => setEditingTask(t)}><Save size={14} /> 编辑</button><button className="danger" onClick={() => deleteTask(t.id)}><Trash2 size={14} /> 删除</button></div></article>; })}
+            </div>
           </Card>
           {selectedTask && <Card title={`任务详情：${selectedTask.name}`} action={<div className="row-actions"><button onClick={() => viewTask(selectedTask)}><RefreshCcw size={14} /> 刷新</button><a className="ssh-link" target="_blank" href={`/api/tasks/${selectedTask.id}/report`}><Download size={14} /> 查看报告</a><a className="ssh-link" href={`/api/tasks/${selectedTask.id}/report/download`}><Download size={14} /> 下载报告</a></div>}>
             <div className="stats-grid task-detail-grid">
@@ -354,7 +377,7 @@ function App() {
               <Stat icon={<Trash2 />} label="失败数" value={Number(taskStats?.summary?.['Failure Count'] ?? 0)} />
             </div>
             {selectedTask.run_mode === 'web_ui' && selectedTask.web_port && selectedTask.status === 'running' && <div className="locust-frame-wrap">
-              {(() => { const host = servers.find((s) => s.id === selectedTask.server_id)?.host ?? '0.0.0.0'; const url = `http://${host}:${selectedTask.web_port}`; return <><div className="hint">Locust 原生 Web UI：<a target="_blank" href={url}>{url}</a></div><iframe title="Locust Web UI" className="locust-frame" src={url} /></>; })()}
+              {(() => { const url = `http://${resolveLocustHost(selectedTask)}:${selectedTask.web_port}`; return <><div className="hint">Locust 原生 Web UI：<a target="_blank" href={url}>{url}</a></div><iframe title="Locust Web UI" className="locust-frame" src={url} /></>; })()}
             </div>}
             <pre className="terminal task-log">{taskLogs || '暂无日志'}</pre>
           </Card>}
@@ -363,7 +386,7 @@ function App() {
 
         {page === 'scripts' && (
           <section className="page-stack">
-            <Card title="Locust 脚本生成" action={<div className="row-actions"><button onClick={() => navigator.clipboard?.writeText(scriptContent)}><Copy size={16} /> 复制</button><button onClick={() => downloadScript('stress_test.py', scriptContent)}><Download size={16} /> 下载 .py</button><button onClick={() => saveScriptFile()}><Save size={16} /> 保存到后端</button><button onClick={() => saveScriptAndCreateTask()}><Play size={16} /> 保存并创建任务</button><button onClick={() => generateScript()}><RefreshCcw size={16} /> 重新生成</button></div>}>
+            <Card title="Locust 脚本生成" action={<div className="row-actions"><button onClick={() => navigator.clipboard?.writeText(scriptContent)}><Copy size={16} /> 复制</button><button onClick={() => downloadScript(scriptFileName(), scriptContent)}><Download size={16} /> 下载 .py</button><button onClick={() => saveScriptFile()}><Save size={16} /> 保存到后端</button><button onClick={() => saveScriptAndCreateTask()}><Play size={16} /> 保存并创建任务</button><button onClick={() => generateScript()}><RefreshCcw size={16} /> 重新生成</button></div>}>
               <div className="api-picker">
                 {apis.map((a) => <label className="check-row" key={a.id}><input type="checkbox" checked={selectedApiIds.includes(a.id)} onChange={(e) => setSelectedApiIds((ids) => e.target.checked ? [...ids, a.id] : ids.filter((id) => id !== a.id))} /><span>{a.name || '--'}</span><small className="mono">{a.method} {a.path}</small></label>)}
               </div>
@@ -380,7 +403,7 @@ function App() {
 
       {editingApi && <ApiDialog value={editingApi} hosts={publicHosts} onClose={() => setEditingApi(null)} onSave={(v) => saveApi(v)} />}
       {editingServer && <ServerDialog value={editingServer} onClose={() => setEditingServer(null)} onSave={(v) => saveServer(v)} />}
-      {editingTask && <TaskDialog value={editingTask} scripts={scriptFiles} servers={servers} onClose={() => setEditingTask(null)} onSave={(v) => saveTask(v)} />}
+      {editingTask && <TaskDialog value={editingTask} scripts={scriptFiles} servers={servers} apis={apis} onClose={() => setEditingTask(null)} onSave={(v) => saveTask(v)} />}
       {curlImportOpen && <CurlImportDialog onClose={() => setCurlImportOpen(false)} onImport={importCurl} />}
       {hostDialogOpen && <HostDialog hosts={publicHosts} onSave={(h) => { setPublicHosts((items) => [...items.filter((i) => i.id !== h.id), { ...h, id: h.id || Date.now() }]); }} onDelete={(id) => setPublicHosts((items) => items.filter((i) => i.id !== id))} onClose={() => setHostDialogOpen(false)} />}
       {curlPreview && <CodeDialog title="导出 curl" code={curlPreview} onClose={() => setCurlPreview('')} />}
@@ -441,9 +464,11 @@ function ServerDialog({ value, onClose, onSave }: { value: SshServer; onClose: (
   return <Dialog title={value.id ? '编辑压测机' : '新增压测机'} onClose={onClose}><FormGrid><Text label="名称" placeholder="请输入服务名称，如 locust-worker-01" value={form.name} onChange={(v) => setForm({ ...form, name: v })} /><Text label="Host" placeholder="请输入服务器 IP 或域名，如 10.8.0.31" value={form.host} onChange={(v) => setForm({ ...form, host: v })} /><Text label="端口" placeholder="请输入 SSH 端口，如 22" value={String(form.port)} onChange={(v) => setForm({ ...form, port: Number(v) || 22 })} /><Text label="用户名" placeholder="请输入 SSH 用户名，如 root" value={form.username} onChange={(v) => setForm({ ...form, username: v })} /><Text label="密码" placeholder="请输入 SSH 密码" value={form.password ?? ''} onChange={(v) => setForm({ ...form, password: v })} /><Text label="工作目录" placeholder="请输入远程工作目录，如 /opt/locust-platform" value={form.work_dir ?? '/opt/locust-platform'} onChange={(v) => setForm({ ...form, work_dir: v })} /><Select label="环境" value={form.env} options={['test', 'staging', 'prod']} onChange={(v) => setForm({ ...form, env: v })} /></FormGrid><DialogFooter onClose={onClose} onSave={() => onSave(form)} /></Dialog>;
 }
 
-function TaskDialog({ value, scripts, servers, onClose, onSave }: { value: LoadTask; scripts: ScriptFile[]; servers: SshServer[]; onClose: () => void; onSave: (v: any) => void }) {
+function TaskDialog({ value, scripts, servers, apis, onClose, onSave }: { value: LoadTask; scripts: ScriptFile[]; servers: SshServer[]; apis: ApiEndpoint[]; onClose: () => void; onSave: (v: any) => void }) {
   const [form, setForm] = useState(value);
-  return <Dialog title={value.id ? '编辑压测任务' : '新建压测任务'} onClose={onClose}><FormGrid><Text label="任务名称" placeholder="请输入任务名称，如登录链路 100 并发" value={form.name} onChange={(v) => setForm({ ...form, name: v })} /><Select label="脚本文件" value={String(form.script_file_id ?? '')} options={scripts.map((s) => String(s.id))} labelMap={(id) => scripts.find((s) => s.id === Number(id))?.name ?? id} onChange={(v) => setForm({ ...form, script_file_id: Number(v) || null })} /><Select label="运行模式" value={form.run_mode ?? 'headless'} options={['web_ui', 'headless']} labelMap={(id) => id === 'web_ui' ? 'Locust Web UI（内嵌动态图）' : 'Headless（自动跑完出报告）'} onChange={(v) => setForm({ ...form, run_mode: v })} /><Select label="执行位置" value={String(form.server_id ?? '')} options={['', ...servers.map((s) => String(s.id))]} labelMap={(id) => id === '' ? '本机执行' : servers.find((s) => s.id === Number(id))?.name ?? id} onChange={(v) => setForm({ ...form, server_id: Number(v) || null })} /><Text label="目标 Host" placeholder="请输入压测目标 Host，如 https://api.example.com" value={form.target_host} onChange={(v) => setForm({ ...form, target_host: v })} /><Text label="并发用户" placeholder="请输入并发用户数，如 100" value={String(form.users)} onChange={(v) => setForm({ ...form, users: Number(v) || 1 })} /><Text label="启动速率" placeholder="请输入每秒启动用户数，如 10" value={String(form.spawn_rate)} onChange={(v) => setForm({ ...form, spawn_rate: Number(v) || 1 })} /><Text label="运行时长" placeholder="Headless 模式使用，如 10s / 5m" value={form.run_time} onChange={(v) => setForm({ ...form, run_time: v })} /></FormGrid><DialogFooter onClose={onClose} onSave={() => onSave(form)} /></Dialog>;
+  const selectedScript = scripts.find((s) => s.id === form.script_file_id);
+  const endpoints = apis.filter((apiItem) => selectedScript?.content.includes(`"${apiItem.path}"`) || selectedScript?.content.includes(`url=${apiItem.path}`));
+  return <Dialog title={value.id ? '编辑压测任务' : '新建压测任务'} onClose={onClose}><FormGrid><Text label="任务名称" placeholder="请输入任务名称，如登录链路 100 并发" value={form.name} onChange={(v) => setForm({ ...form, name: v })} /><Select label="脚本文件" value={String(form.script_file_id ?? '')} options={scripts.map((s) => String(s.id))} labelMap={(id) => scripts.find((s) => s.id === Number(id))?.name ?? id} onChange={(v) => setForm({ ...form, script_file_id: Number(v) || null })} /><div className="wide-field endpoint-info"><span>目标接口</span>{endpoints.length ? endpoints.map((item) => <p key={item.id}><b>{item.name || '--'}</b><code>{item.method} {item.path}</code></p>) : <p className="hint">当前脚本未匹配到接口信息</p>}</div><Select label="运行模式" value={form.run_mode ?? 'headless'} options={['web_ui', 'headless']} labelMap={(id) => id === 'web_ui' ? 'Locust Web UI（内嵌动态图）' : 'Headless（自动跑完出报告）'} onChange={(v) => setForm({ ...form, run_mode: v })} /><Select label="执行位置" value={String(form.server_id ?? '')} options={['', ...servers.map((s) => String(s.id))]} labelMap={(id) => id === '' ? '本机执行' : servers.find((s) => s.id === Number(id))?.name ?? id} onChange={(v) => setForm({ ...form, server_id: Number(v) || null })} /><Text label="目标 Host" placeholder="请输入压测目标 Host，如 https://api.example.com" value={form.target_host} onChange={(v) => setForm({ ...form, target_host: v })} /><Text label="并发用户" placeholder="请输入并发用户数，如 100" value={String(form.users)} onChange={(v) => setForm({ ...form, users: Number(v) || 1 })} /><Text label="启动速率" placeholder="请输入每秒启动用户数，如 10" value={String(form.spawn_rate)} onChange={(v) => setForm({ ...form, spawn_rate: Number(v) || 1 })} /><Text label="运行时长" placeholder="Headless 模式使用，如 10s / 5m" value={form.run_time} onChange={(v) => setForm({ ...form, run_time: v })} /></FormGrid><DialogFooter onClose={onClose} onSave={() => onSave(form)} /></Dialog>;
 }
 
 function CurlImportDialog({ onClose, onImport }: { onClose: () => void; onImport: (v: string) => void }) {
