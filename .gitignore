@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+backend/.venv/
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Local runtime data
+storage/
+backend/storage/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Tooling
+.wrangler/
+
+# Environment and OS noise
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
