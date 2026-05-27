@@ -100,6 +100,7 @@ function App() {
   const [curlPreview, setCurlPreview] = useState('');
   const [responsePreview, setResponsePreview] = useState<ApiEndpoint | null>(null);
   const [scriptContent, setScriptContent] = useState('');
+  const [generatedScriptName, setGeneratedScriptName] = useState(scriptFileName());
   const [apiKeyword, setApiKeyword] = useState('');
   const [apiPage, setApiPage] = useState(1);
   const [serverConsole, setServerConsole] = useState<string[]>(['console ready']);
@@ -172,10 +173,12 @@ function App() {
 
   const generateScript = useCallback(async () => {
     try {
+      const filename = scriptFileName();
       const data = await api('/scripts/generate', {
         method: 'POST',
-        body: JSON.stringify({ endpoint_ids: selectedApiIds }),
+        body: JSON.stringify({ endpoint_ids: selectedApiIds, filename }),
       });
+      setGeneratedScriptName(filename);
       setScriptContent(data.content);
     } catch (e) { console.error(e); }
   }, [selectedApiIds]);
@@ -233,7 +236,7 @@ function App() {
     if (!scriptContent.trim()) return null;
     const saved = await api('/scripts', {
       method: 'POST',
-      body: JSON.stringify({ name: scriptFileName(), content: scriptContent }),
+      body: JSON.stringify({ name: generatedScriptName, content: scriptContent }),
     });
     await load();
     return saved;
@@ -392,7 +395,7 @@ function App() {
 
         {page === 'scripts' && (
           <section className="page-stack">
-            <Card title="Locust 脚本生成" action={<div className="row-actions"><button onClick={() => navigator.clipboard?.writeText(scriptContent)}><Copy size={16} /> 复制</button><button onClick={() => downloadScript(scriptFileName(), scriptContent)}><Download size={16} /> 下载 .py</button><button onClick={() => saveScriptFile()}><Save size={16} /> 保存到后端</button><button onClick={() => saveScriptAndCreateTask()}><Play size={16} /> 保存并创建任务</button><button onClick={() => generateScript()}><RefreshCcw size={16} /> 重新生成</button></div>}>
+            <Card title="Locust 脚本生成" action={<div className="row-actions"><button onClick={() => navigator.clipboard?.writeText(scriptContent)}><Copy size={16} /> 复制</button><button onClick={() => downloadScript(generatedScriptName, scriptContent)}><Download size={16} /> 下载 .py</button><button onClick={() => saveScriptFile()}><Save size={16} /> 保存到后端</button><button onClick={() => saveScriptAndCreateTask()}><Play size={16} /> 保存并创建任务</button><button onClick={() => generateScript()}><RefreshCcw size={16} /> 重新生成</button></div>}>
               <div className="api-picker">
                 {apis.map((a) => <label className="check-row" key={a.id}><input type="checkbox" checked={selectedApiIds.includes(a.id)} onChange={(e) => setSelectedApiIds((ids) => e.target.checked ? [...ids, a.id] : ids.filter((id) => id !== a.id))} /><span>{a.name || '--'}</span><small className="mono">{a.method} {a.path}</small></label>)}
               </div>

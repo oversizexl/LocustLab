@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -263,7 +264,8 @@ async def _run_local_locust(task_id: int):
     report_dir.mkdir(parents=True, exist_ok=True)
     work_dir = report_dir / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
-    locust_file = work_dir / "stress_test.py"
+    script_filename = _script_filename(script)
+    locust_file = work_dir / script_filename
     locust_file.write_text(script.content, encoding="utf-8")
 
     log_path = LOGS_DIR / f"task_{task_id}.log"
@@ -390,19 +392,21 @@ async def _run_remote_locust(task_id: int):
     log_path = LOGS_DIR / f"task_{task_id}.log"
     remote_base = (server.work_dir or "/opt/locust-platform").rstrip("/")
     remote_dir = f"{remote_base}/tasks/task_{task_id}"
-    script_path = f"{remote_dir}/stress_test.py"
+    script_filename = _script_filename(script)
+    quoted_script_filename = shlex.quote(script_filename)
+    script_path = f"{remote_dir}/{script_filename}"
     csv_prefix = f"{remote_dir}/result"
     web_port = 8090 + task_id if task.run_mode == "web_ui" else None
 
     if task.run_mode == "web_ui":
         command = (
-            f"cd {remote_dir} && nohup python3 -m locust -f stress_test.py "
+            f"cd {remote_dir} && nohup python3 -m locust -f {quoted_script_filename} "
             f"--web-host 0.0.0.0 --web-port {web_port} --host {task.target_host} "
             f"--csv result --csv-full-history --loglevel INFO > stdout.log 2>&1 & echo $!"
         )
     else:
         command = (
-            f"cd {remote_dir} && nohup python3 -m locust -f stress_test.py --headless "
+            f"cd {remote_dir} && nohup python3 -m locust -f {quoted_script_filename} --headless "
             f"-u {task.users} -r {task.spawn_rate} --run-time {task.run_time} --host {task.target_host} "
             f"--html report.html --csv result --csv-full-history --loglevel INFO > stdout.log 2>&1 & echo $!"
         )
@@ -528,6 +532,11 @@ def _run_cmd(cmd: list[str], cwd: Path) -> dict:
         "stdout": proc.stdout.strip(),
         "stderr": proc.stderr.strip(),
     }
+
+
+def _script_filename(script: ScriptFile) -> str:
+    name = Path(script.name or "stress_test.py").name
+    return name if name.endswith(".py") else f"{name}.py"
 
 
 def _parse_run_time(run_time: str) -> int:
