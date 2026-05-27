@@ -19,7 +19,7 @@ locust-pressure-platform/
     storage/         SQLite DB + scripts + reports + logs
     requirements.txt
   src/               React 前端
-  vite.config.ts     Vite dev proxy -> 127.0.0.1:8000
+  vite.config.ts     Vite dev proxy -> 0.0.0.0:8000
 ```
 
 ## 快速启动
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-启动后打开 http://127.0.0.1:8000/docs 查看 API 文档。
+启动后打开 http://0.0.0.0:8000/docs 查看 API 文档。
 
 ### 2. 启动前端
 

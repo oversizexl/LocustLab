@@ -25,7 +25,9 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 @router.get("")
 async def list_tasks(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(LoadTask).order_by(LoadTask.id.desc()))
-    items = [LoadTaskOut.model_validate(row).model_dump() for row in result.scalars().all()]
+    items = [
+        LoadTaskOut.model_validate(row).model_dump() for row in result.scalars().all()
+    ]
     return ApiResponse(data={"items": items, "total": len(items)})
 
 
@@ -47,7 +49,9 @@ async def get_task(task_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{task_id}")
-async def update_task(task_id: int, body: LoadTaskUpdate, db: AsyncSession = Depends(get_db)):
+async def update_task(
+    task_id: int, body: LoadTaskUpdate, db: AsyncSession = Depends(get_db)
+):
     obj = await db.get(LoadTask, task_id)
     if not obj:
         raise HTTPException(404, "task not found")
@@ -73,24 +77,60 @@ async def precheck_task(task_id: int, db: AsyncSession = Depends(get_db)):
     task = await db.get(LoadTask, task_id)
     if not task:
         raise HTTPException(404, "task not found")
-    script = await db.get(ScriptFile, task.script_file_id) if task.script_file_id else None
+    script = (
+        await db.get(ScriptFile, task.script_file_id) if task.script_file_id else None
+    )
     checks = []
-    checks.append({"name": "script_selected", "success": script is not None, "detail": script.name if script else "未选择脚本"})
-    checks.append({"name": "target_host", "success": bool(task.target_host), "detail": task.target_host})
-    checks.append({"name": "users", "success": task.users > 0, "detail": str(task.users)})
-    checks.append({"name": "spawn_rate", "success": task.spawn_rate > 0, "detail": str(task.spawn_rate)})
+    checks.append(
+        {
+            "name": "script_selected",
+            "success": script is not None,
+            "detail": script.name if script else "未选择脚本",
+        }
+    )
+    checks.append(
+        {
+            "name": "target_host",
+            "success": bool(task.target_host),
+            "detail": task.target_host,
+        }
+    )
+    checks.append(
+        {"name": "users", "success": task.users > 0, "detail": str(task.users)}
+    )
+    checks.append(
+        {
+            "name": "spawn_rate",
+            "success": task.spawn_rate > 0,
+            "detail": str(task.spawn_rate),
+        }
+    )
     if task.server_id:
         server = await db.get(SshServer, task.server_id)
         if not server:
-            checks.append({"name": "server", "success": False, "detail": "压测机不存在"})
+            checks.append(
+                {"name": "server", "success": False, "detail": "压测机不存在"}
+            )
         else:
-            password = decrypt(server.encrypted_password) if server.encrypted_password else ""
+            password = (
+                decrypt(server.encrypted_password) if server.encrypted_password else ""
+            )
             remote = await asyncio.to_thread(_remote_precheck, server, password)
             checks.extend(remote)
     else:
-        locust_check = await asyncio.to_thread(_run_cmd, [sys.executable, "-m", "locust", "--version"], Path.cwd())
-        checks.append({"name": "locust_installed", "success": locust_check["returncode"] == 0, "detail": locust_check["stdout"] or locust_check["stderr"]})
-    return ApiResponse(data={"success": all(item["success"] for item in checks), "checks": checks})
+        locust_check = await asyncio.to_thread(
+            _run_cmd, [sys.executable, "-m", "locust", "--version"], Path.cwd()
+        )
+        checks.append(
+            {
+                "name": "locust_installed",
+                "success": locust_check["returncode"] == 0,
+                "detail": locust_check["stdout"] or locust_check["stderr"],
+            }
+        )
+    return ApiResponse(
+        data={"success": all(item["success"] for item in checks), "checks": checks}
+    )
 
 
 @router.post("/{task_id}/start")
@@ -118,7 +158,9 @@ async def start_task(task_id: int, db: AsyncSession = Depends(get_db)):
         asyncio.create_task(_run_remote_locust(task.id))
     else:
         asyncio.create_task(_run_local_locust(task.id))
-    return ApiResponse(message="task started", data=LoadTaskOut.model_validate(task).model_dump())
+    return ApiResponse(
+        message="task started", data=LoadTaskOut.model_validate(task).model_dump()
+    )
 
 
 @router.post("/{task_id}/stop")
@@ -130,10 +172,24 @@ async def stop_task(task_id: int, db: AsyncSession = Depends(get_db)):
         if task.server_id:
             server = await db.get(SshServer, task.server_id)
             if server:
-                password = decrypt(server.encrypted_password) if server.encrypted_password else ""
+                password = (
+                    decrypt(server.encrypted_password)
+                    if server.encrypted_password
+                    else ""
+                )
                 try:
-                    ssh = await asyncio.to_thread(ssh_service.create_ssh_client, server.host, server.port, server.username, password)
-                    await asyncio.to_thread(ssh_service.execute_command, ssh, f"kill {task.remote_pid} 2>/dev/null || true")
+                    ssh = await asyncio.to_thread(
+                        ssh_service.create_ssh_client,
+                        server.host,
+                        server.port,
+                        server.username,
+                        password,
+                    )
+                    await asyncio.to_thread(
+                        ssh_service.execute_command,
+                        ssh,
+                        f"kill {task.remote_pid} 2>/dev/null || true",
+                    )
                     ssh.close()
                 except Exception as exc:
                     task.error_message = f"remote stop warning: {exc}"
@@ -147,14 +203,18 @@ async def stop_task(task_id: int, db: AsyncSession = Depends(get_db)):
     task.status = "stopped"
     task.finished_at = datetime.utcnow()
     await db.commit()
-    return ApiResponse(message="task stopped", data=LoadTaskOut.model_validate(task).model_dump())
+    return ApiResponse(
+        message="task stopped", data=LoadTaskOut.model_validate(task).model_dump()
+    )
 
 
 @router.get("/{task_id}/logs")
 async def get_task_logs(task_id: int):
     log_path = LOGS_DIR / f"task_{task_id}.log"
     if log_path.exists():
-        return ApiResponse(data={"content": log_path.read_text(encoding="utf-8", errors="replace")})
+        return ApiResponse(
+            data={"content": log_path.read_text(encoding="utf-8", errors="replace")}
+        )
     return ApiResponse(data={"content": "no logs available"})
 
 
@@ -162,7 +222,12 @@ async def get_task_logs(task_id: int):
 async def get_task_stats(task_id: int):
     stats_path = REPORTS_DIR / f"task_{task_id}" / "result_stats.csv"
     history_path = REPORTS_DIR / f"task_{task_id}" / "result_stats_history.csv"
-    return ApiResponse(data={"summary": _parse_stats(stats_path), "history": _parse_history(history_path)})
+    return ApiResponse(
+        data={
+            "summary": _parse_stats(stats_path),
+            "history": _parse_history(history_path),
+        }
+    )
 
 
 @router.get("/{task_id}/report")
@@ -212,7 +277,7 @@ async def _run_local_locust(task_id: int):
             "-f",
             str(locust_file),
             "--web-host",
-            "127.0.0.1",
+            "0.0.0.0",
             "--web-port",
             str(web_port),
             "--host",
@@ -285,7 +350,9 @@ async def _run_local_locust(task_id: int):
                 task.status = "success" if return_code == 0 else "failed"
                 task.exit_code = return_code
                 task.report_path = str(report_dir)
-                task.error_message = "" if return_code == 0 else "locust exited with non-zero status"
+                task.error_message = (
+                    "" if return_code == 0 else "locust exited with non-zero status"
+                )
                 task.finished_at = datetime.utcnow()
                 await db.commit()
     except Exception as exc:
@@ -314,7 +381,9 @@ async def _run_remote_locust(task_id: int):
                 task.finished_at = datetime.utcnow()
                 await db.commit()
             return
-        password = decrypt(server.encrypted_password) if server.encrypted_password else ""
+        password = (
+            decrypt(server.encrypted_password) if server.encrypted_password else ""
+        )
 
     report_dir = REPORTS_DIR / f"task_{task_id}"
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -340,11 +409,25 @@ async def _run_remote_locust(task_id: int):
     log_path.write_text(f"remote={server.host}\n$ {command}\n", encoding="utf-8")
 
     try:
-        ssh = await asyncio.to_thread(ssh_service.create_ssh_client, server.host, server.port, server.username, password)
-        await asyncio.to_thread(ssh_service.execute_command, ssh, f"mkdir -p {remote_dir}")
-        await asyncio.to_thread(ssh_service.upload_file, ssh, script.content, script_path)
+        ssh = await asyncio.to_thread(
+            ssh_service.create_ssh_client,
+            server.host,
+            server.port,
+            server.username,
+            password,
+        )
+        await asyncio.to_thread(
+            ssh_service.execute_command, ssh, f"mkdir -p {remote_dir}"
+        )
+        await asyncio.to_thread(
+            ssh_service.upload_file, ssh, script.content, script_path
+        )
         result = await asyncio.to_thread(ssh_service.execute_command, ssh, command)
-        pid = (result.get("stdout") or "").strip().splitlines()[-1] if result.get("stdout") else ""
+        pid = (
+            (result.get("stdout") or "").strip().splitlines()[-1]
+            if result.get("stdout")
+            else ""
+        )
 
         async with async_session() as db:
             task_db = await db.get(LoadTask, task_id)
@@ -384,14 +467,24 @@ async def _run_remote_locust(task_id: int):
 
 
 async def _collect_remote_files(ssh, remote_dir: str, report_dir: Path, log_path: Path):
-    files = ["report.html", "result_stats.csv", "result_stats_history.csv", "result_failures.csv", "result_exceptions.csv"]
+    files = [
+        "report.html",
+        "result_stats.csv",
+        "result_stats_history.csv",
+        "result_failures.csv",
+        "result_exceptions.csv",
+    ]
     for name in files:
-        data = await asyncio.to_thread(ssh_service.download_file, ssh, f"{remote_dir}/{name}")
+        data = await asyncio.to_thread(
+            ssh_service.download_file, ssh, f"{remote_dir}/{name}"
+        )
         if data:
             if isinstance(data, bytes):
                 data = data.decode("utf-8", errors="replace")
             (report_dir / name).write_text(data, encoding="utf-8")
-    stdout = await asyncio.to_thread(ssh_service.download_file, ssh, f"{remote_dir}/stdout.log")
+    stdout = await asyncio.to_thread(
+        ssh_service.download_file, ssh, f"{remote_dir}/stdout.log"
+    )
     if stdout:
         if isinstance(stdout, bytes):
             stdout = stdout.decode("utf-8", errors="replace")
@@ -401,8 +494,12 @@ async def _collect_remote_files(ssh, remote_dir: str, report_dir: Path, log_path
 def _remote_precheck(server: SshServer, password: str) -> list[dict]:
     checks = []
     try:
-        ssh = ssh_service.create_ssh_client(server.host, server.port, server.username, password)
-        checks.append({"name": "ssh_connection", "success": True, "detail": server.host})
+        ssh = ssh_service.create_ssh_client(
+            server.host, server.port, server.username, password
+        )
+        checks.append(
+            {"name": "ssh_connection", "success": True, "detail": server.host}
+        )
         commands = {
             "python3": "python3 --version",
             "locust": "python3 -m locust --version",
@@ -411,7 +508,13 @@ def _remote_precheck(server: SshServer, password: str) -> list[dict]:
         for name, cmd in commands.items():
             result = ssh_service.execute_command(ssh, cmd)
             detail = (result.get("stdout") or result.get("stderr") or "").strip()
-            checks.append({"name": name, "success": result.get("exit_code") == 0, "detail": detail})
+            checks.append(
+                {
+                    "name": name,
+                    "success": result.get("exit_code") == 0,
+                    "detail": detail,
+                }
+            )
         ssh.close()
     except Exception as exc:
         checks.append({"name": "ssh_connection", "success": False, "detail": str(exc)})
@@ -420,7 +523,11 @@ def _remote_precheck(server: SshServer, password: str) -> list[dict]:
 
 def _run_cmd(cmd: list[str], cwd: Path) -> dict:
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=20)
-    return {"returncode": proc.returncode, "stdout": proc.stdout.strip(), "stderr": proc.stderr.strip()}
+    return {
+        "returncode": proc.returncode,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
 
 
 def _parse_run_time(run_time: str) -> int:
@@ -442,7 +549,10 @@ def _parse_stats(path: Path) -> dict:
         return {}
     with path.open("r", encoding="utf-8", errors="replace") as f:
         rows = list(csv.DictReader(f))
-    total = next((row for row in rows if row.get("Name") == "Aggregated"), rows[-1] if rows else {})
+    total = next(
+        (row for row in rows if row.get("Name") == "Aggregated"),
+        rows[-1] if rows else {},
+    )
     return total
 
 

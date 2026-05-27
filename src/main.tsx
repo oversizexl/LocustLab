@@ -130,11 +130,22 @@ function App() {
     }
   }, [selectedApiIds.length]);
 
+  const loadTasks = useCallback(async () => {
+    try {
+      const data = await api('/tasks');
+      setTasks(data.items);
+      setSelectedTask((current) => current ? data.items.find((item: LoadTask) => item.id === current.id) ?? current : current);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const interval = setInterval(load, 3000);
+    if (!tasks.some((task) => task.status === 'running')) return;
+    const interval = setInterval(loadTasks, 3000);
     return () => clearInterval(interval);
-  }, [load]);
+  }, [loadTasks, tasks]);
 
   const generateScript = useCallback(async () => {
     try {
@@ -242,7 +253,7 @@ function App() {
 
   const startTask = async (id: number) => {
     await api(`/tasks/${id}/start`, { method: 'POST' });
-    load();
+    loadTasks();
   };
 
   const precheckTask = async (id: number) => {
@@ -343,7 +354,7 @@ function App() {
               <Stat icon={<Trash2 />} label="失败数" value={Number(taskStats?.summary?.['Failure Count'] ?? 0)} />
             </div>
             {selectedTask.run_mode === 'web_ui' && selectedTask.web_port && selectedTask.status === 'running' && <div className="locust-frame-wrap">
-              {(() => { const host = servers.find((s) => s.id === selectedTask.server_id)?.host ?? '127.0.0.1'; const url = `http://${host}:${selectedTask.web_port}`; return <><div className="hint">Locust 原生 Web UI：<a target="_blank" href={url}>{url}</a></div><iframe title="Locust Web UI" className="locust-frame" src={url} /></>; })()}
+              {(() => { const host = servers.find((s) => s.id === selectedTask.server_id)?.host ?? '0.0.0.0'; const url = `http://${host}:${selectedTask.web_port}`; return <><div className="hint">Locust 原生 Web UI：<a target="_blank" href={url}>{url}</a></div><iframe title="Locust Web UI" className="locust-frame" src={url} /></>; })()}
             </div>}
             <pre className="terminal task-log">{taskLogs || '暂无日志'}</pre>
           </Card>}
